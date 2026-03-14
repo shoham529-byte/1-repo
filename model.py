@@ -1,258 +1,183 @@
-{
-  "nbformat": 4,
-  "nbformat_minor": 0,
-  "metadata": {
-    "colab": {
-      "provenance": [],
-      "mount_file_id": "1EcLmFO2BTpBvRk4b_CVAYqAWxTRP7hYl",
-      "authorship_tag": "ABX9TyOZWBdk81xCvsks2PiSp3tC",
-      "include_colab_link": true
-    },
-    "kernelspec": {
-      "name": "python3",
-      "display_name": "Python 3"
-    },
-    "language_info": {
-      "name": "python"
-    }
-  },
-  "cells": [
-    {
-      "cell_type": "markdown",
-      "metadata": {
-        "id": "view-in-github",
-        "colab_type": "text"
-      },
-      "source": [
-        "<a href=\"https://colab.research.google.com/github/shoham529-byte/1-repo/blob/main/model.py\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
-      ]
-    },
-    {
-      "cell_type": "code",
-      "execution_count": null,
-      "metadata": {
-        "colab": {
-          "base_uri": "https://localhost:8080/"
-        },
-        "id": "R6N_XKu1PsGL",
-        "outputId": "8971de2f-e736-4b1b-830d-4ce0f09ddcad"
-      },
-      "outputs": [
-        {
-          "output_type": "stream",
-          "name": "stdout",
-          "text": [
-            "============================================================\n",
-            "MNIST CNN Training\n",
-            "============================================================\n",
-            "Training samples: 50,000\n",
-            "Validation samples: 10,000\n",
-            "Test samples: 10,000\n",
-            "------------------------------------------------------------\n",
-            "Optimizer: Adam (lr=0.001, weight_decay=0.0001)\n",
-            "Batch size: 64\n",
-            "Epochs: 7\n",
-            "============================================================\n",
-            "Epoch [ 1/7] | Train Loss: 0.1499 | Val Accuracy: 98.39% | Time: 69.5s\n",
-            "Epoch [ 2/7] | Train Loss: 0.0460 | Val Accuracy: 98.33% | Time: 73.1s\n",
-            "Epoch [ 3/7] | Train Loss: 0.0338 | Val Accuracy: 98.83% | Time: 81.4s\n",
-            "Epoch [ 4/7] | Train Loss: 0.0218 | Val Accuracy: 98.65% | Time: 83.1s\n",
-            "Epoch [ 5/7] | Train Loss: 0.0201 | Val Accuracy: 98.68% | Time: 79.5s\n",
-            "Epoch [ 6/7] | Train Loss: 0.0175 | Val Accuracy: 98.96% | Time: 79.6s\n",
-            "Epoch [ 7/7] | Train Loss: 0.0149 | Val Accuracy: 98.93% | Time: 82.4s\n",
-            "============================================================\n",
-            "Training finished. Evaluating on hidden Test Set...\n",
-            "Final Test Accuracy: 99.11%\n",
-            "Total time: 548.6 seconds\n",
-            "Model saved to 'mnist_cnn.pth'\n",
-            "============================================================\n"
-          ]
-        }
-      ],
-      "source": [
-        "import torch\n",
-        "import torch.nn as nn\n",
-        "import torch.optim as optim\n",
-        "from torch.utils.data import DataLoader, random_split\n",
-        "from torchvision import datasets, transforms\n",
-        "import time\n",
-        "import pandas as pd\n",
-        "\n",
-        "\n",
-        "\n",
-        "BATCH_SIZE = 64\n",
-        "LEARNING_RATE = 0.001\n",
-        "WEIGHT_DECAY = 1e-4\n",
-        "NUM_EPOCHS = 7\n",
-        "RANDOM_SEED = 42\n",
-        "\n",
-        "def set_seed(seed):\n",
-        "    torch.manual_seed(seed)\n",
-        "\n",
-        "def get_data_loaders(batch_size):\n",
-        "    # to calculate statistics\n",
-        "    temp_dataset = datasets.MNIST('./data', train=True, download=True, transform=transforms.ToTensor())\n",
-        "    temp_loader = DataLoader(temp_dataset, batch_size=len(temp_dataset))\n",
-        "    data = next(iter(temp_loader))[0]\n",
-        "    mean = torch.mean(data).item()\n",
-        "    std = torch.std(data).item()\n",
-        "\n",
-        "    transform = transforms.Compose([\n",
-        "        transforms.ToTensor(),\n",
-        "        transforms.Normalize(mean=(mean,), std=(std,))\n",
-        "    ])\n",
-        "\n",
-        "    # Load training set\n",
-        "    full_train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)\n",
-        "\n",
-        "    # Split into 50k training / 10k validation\n",
-        "    train_size = 50000\n",
-        "    val_size = len(full_train_dataset) - train_size\n",
-        "    train_dataset, val_dataset = random_split(full_train_dataset, [train_size, val_size], generator=torch.Generator().manual_seed(RANDOM_SEED))\n",
-        "\n",
-        "    # test dataset\n",
-        "    test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)\n",
-        "\n",
-        "    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)\n",
-        "    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)\n",
-        "    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)\n",
-        "\n",
-        "    print(f\"Training samples: {len(train_dataset):,}\")\n",
-        "    print(f\"Validation samples: {len(val_dataset):,}\")\n",
-        "    print(f\"Test samples: {len(test_dataset):,}\")\n",
-        "\n",
-        "    return train_loader, val_loader, test_loader\n",
-        "\n",
-        "class SimpleCNN(nn.Module):\n",
-        "    def __init__(self):\n",
-        "        super(SimpleCNN, self).__init__()\n",
-        "        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)\n",
-        "        self.relu1 = nn.ReLU()\n",
-        "        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)\n",
-        "        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)\n",
-        "        self.relu2 = nn.ReLU()\n",
-        "        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)\n",
-        "        self.fc1 = nn.Linear(64 * 7 * 7, 128)\n",
-        "        self.relu3 = nn.ReLU()\n",
-        "        self.fc2 = nn.Linear(128, 10) # 10 classes for MNIST\n",
-        "\n",
-        "    def forward(self, x):\n",
-        "        x = self.pool1(self.relu1(self.conv1(x)))\n",
-        "        x = self.pool2(self.relu2(self.conv2(x)))\n",
-        "        x = x.view(-1, 64 * 7 * 7) # Flatten the output for the fully connected layers\n",
-        "        x = self.relu3(self.fc1(x))\n",
-        "        x = self.fc2(x)\n",
-        "        return x\n",
-        "\n",
-        "def train_one_epoch(model, train_loader, criterion, optimizer):\n",
-        "    model.train()\n",
-        "    total_loss = 0.0\n",
-        "    num_batches = 0\n",
-        "\n",
-        "    for images, labels in train_loader:\n",
-        "        outputs = model(images)\n",
-        "        loss = criterion(outputs, labels)\n",
-        "\n",
-        "        optimizer.zero_grad()  # Clear gradients from previous step\n",
-        "        loss.backward()\n",
-        "        optimizer.step()\n",
-        "\n",
-        "        total_loss += loss.item()\n",
-        "        num_batches += 1\n",
-        "\n",
-        "    return total_loss / num_batches\n",
-        "\n",
-        "\n",
-        "def evaluate(model, test_loader):\n",
-        "\n",
-        "    model.eval()\n",
-        "    correct = 0\n",
-        "    total = 0\n",
-        "\n",
-        "    with torch.no_grad():\n",
-        "        for images, labels in test_loader:\n",
-        "\n",
-        "            outputs = model(images)\n",
-        "            _, predicted = torch.max(outputs, dim=1)\n",
-        "\n",
-        "            total += labels.size(0)\n",
-        "            correct += (predicted == labels).sum().item()\n",
-        "\n",
-        "    accuracy = 100.0 * correct / total\n",
-        "    return accuracy\n",
-        "\n",
-        "\n",
-        "def main():\n",
-        "    print(\"=\" * 60)\n",
-        "    print(\"MNIST CNN Training\")\n",
-        "    print(\"=\" * 60)\n",
-        "\n",
-        "    set_seed(RANDOM_SEED)\n",
-        "\n",
-        "    # Load data\n",
-        "    train_loader, val_loader, test_loader = get_data_loaders(BATCH_SIZE)\n",
-        "    print(\"-\" * 60)\n",
-        "\n",
-        "    # Initialize model\n",
-        "    model = SimpleCNN() # Corrected line: Instantiate the defined SimpleCNN model\n",
-        "    criterion = nn.CrossEntropyLoss()\n",
-        "    optimizer = optim.Adam(model.parameters(),lr=LEARNING_RATE,weight_decay=WEIGHT_DECAY)\n",
-        "\n",
-        "    print(f\"Optimizer: Adam (lr={LEARNING_RATE}, weight_decay={WEIGHT_DECAY})\")\n",
-        "\n",
-        "    print(f\"Batch size: {BATCH_SIZE}\")\n",
-        "    print(f\"Epochs: {NUM_EPOCHS}\")\n",
-        "    print(\"=\" * 60)\n",
-        "\n",
-        "    # Training loop\n",
-        "    start_time = time.time()\n",
-        "\n",
-        "    for epoch in range(1, NUM_EPOCHS + 1):\n",
-        "        epoch_start = time.time()\n",
-        "\n",
-        "        # Train for one epoch\n",
-        "        train_loss = train_one_epoch(model, train_loader, criterion, optimizer)\n",
-        "\n",
-        "        # Evaluate on validation set\n",
-        "        val_accuracy = evaluate(model, val_loader)\n",
-        "\n",
-        "        epoch_time = time.time() - epoch_start\n",
-        "\n",
-        "        # Print progress\n",
-        "        print(f\"Epoch [{epoch:2d}/{NUM_EPOCHS}] | \"\n",
-        "              f\"Train Loss: {train_loss:.4f} | \"\n",
-        "              f\"Val Accuracy: {val_accuracy:.2f}% | \"\n",
-        "              f\"Time: {epoch_time:.1f}s\")\n",
-        "\n",
-        "    total_time = time.time() - start_time\n",
-        "    print(\"=\" * 60)\n",
-        "    print(\"Training finished. Evaluating on hidden Test Set...\")\n",
-        "\n",
-        "    # Final evaluation on the unseen Test set\n",
-        "    test_accuracy = evaluate(model, test_loader)\n",
-        "\n",
-        "    print(f\"Final Test Accuracy: {test_accuracy:.2f}%\")\n",
-        "    print(f\"Total time: {total_time:.1f} seconds\")\n",
-        "\n",
-        "    # Save the trained model\n",
-        "    model_path = \"mnist_cnn.pth\"\n",
-        "    torch.save(model.state_dict(), model_path)\n",
-        "    print(f\"Model saved to '{model_path}'\")\n",
-        "    print(\"=\" * 60)\n",
-        "\n",
-        "\n",
-        "if __name__ == \"__main__\":\n",
-        "    main()"
-      ]
-    },
-    {
-      "cell_type": "code",
-      "source": [],
-      "metadata": {
-        "id": "UbAfo0yBRTus"
-      },
-      "execution_count": null,
-      "outputs": []
-    }
-  ]
-}
+# -*- coding: utf-8 -*-
+"""Untitled6.ipynb
+
+Automatically generated by Colab.
+
+Original file is located at
+    https://colab.research.google.com/drive/1EcLmFO2BTpBvRk4b_CVAYqAWxTRP7hYl
+"""
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, random_split
+from torchvision import datasets, transforms
+import time
+import pandas as pd
+
+
+
+BATCH_SIZE = 64
+LEARNING_RATE = 0.001
+WEIGHT_DECAY = 1e-4
+NUM_EPOCHS = 7
+RANDOM_SEED = 42
+
+def set_seed(seed):
+    torch.manual_seed(seed)
+
+def get_data_loaders(batch_size):
+    # to calculate statistics
+    temp_dataset = datasets.MNIST('./data', train=True, download=True, transform=transforms.ToTensor())
+    temp_loader = DataLoader(temp_dataset, batch_size=len(temp_dataset))
+    data = next(iter(temp_loader))[0]
+    mean = torch.mean(data).item()
+    std = torch.std(data).item()
+
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean=(mean,), std=(std,))
+    ])
+
+    # Load training set
+    full_train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
+
+    # Split into 50k training / 10k validation
+    train_size = 50000
+    val_size = len(full_train_dataset) - train_size
+    train_dataset, val_dataset = random_split(full_train_dataset, [train_size, val_size], generator=torch.Generator().manual_seed(RANDOM_SEED))
+
+    # test dataset
+    test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+    print(f"Training samples: {len(train_dataset):,}")
+    print(f"Validation samples: {len(val_dataset):,}")
+    print(f"Test samples: {len(test_dataset):,}")
+
+    return train_loader, val_loader, test_loader
+
+class SimpleCNN(nn.Module):
+    def __init__(self):
+        super(SimpleCNN, self).__init__()
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
+        self.relu1 = nn.ReLU()
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.relu2 = nn.ReLU()
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.fc1 = nn.Linear(64 * 7 * 7, 128)
+        self.relu3 = nn.ReLU()
+        self.fc2 = nn.Linear(128, 10) # 10 classes for MNIST
+
+    def forward(self, x):
+        x = self.pool1(self.relu1(self.conv1(x)))
+        x = self.pool2(self.relu2(self.conv2(x)))
+        x = x.view(-1, 64 * 7 * 7) # Flatten the output for the fully connected layers
+        x = self.relu3(self.fc1(x))
+        x = self.fc2(x)
+        return x
+
+def train_one_epoch(model, train_loader, criterion, optimizer):
+    model.train()
+    total_loss = 0.0
+    num_batches = 0
+
+    for images, labels in train_loader:
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+
+        optimizer.zero_grad()  # Clear gradients from previous step
+        loss.backward()
+        optimizer.step()
+
+        total_loss += loss.item()
+        num_batches += 1
+
+    return total_loss / num_batches
+
+
+def evaluate(model, test_loader):
+
+    model.eval()
+    correct = 0
+    total = 0
+
+    with torch.no_grad():
+        for images, labels in test_loader:
+
+            outputs = model(images)
+            _, predicted = torch.max(outputs, dim=1)
+
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+
+    accuracy = 100.0 * correct / total
+    return accuracy
+
+
+def main():
+    print("=" * 60)
+    print("MNIST CNN Training")
+    print("=" * 60)
+
+    set_seed(RANDOM_SEED)
+
+    # Load data
+    train_loader, val_loader, test_loader = get_data_loaders(BATCH_SIZE)
+    print("-" * 60)
+
+    # Initialize model
+    model = SimpleCNN() # Corrected line: Instantiate the defined SimpleCNN model
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(),lr=LEARNING_RATE,weight_decay=WEIGHT_DECAY)
+
+    print(f"Optimizer: Adam (lr={LEARNING_RATE}, weight_decay={WEIGHT_DECAY})")
+
+    print(f"Batch size: {BATCH_SIZE}")
+    print(f"Epochs: {NUM_EPOCHS}")
+    print("=" * 60)
+
+    # Training loop
+    start_time = time.time()
+
+    for epoch in range(1, NUM_EPOCHS + 1):
+        epoch_start = time.time()
+
+        # Train for one epoch
+        train_loss = train_one_epoch(model, train_loader, criterion, optimizer)
+
+        # Evaluate on validation set
+        val_accuracy = evaluate(model, val_loader)
+
+        epoch_time = time.time() - epoch_start
+
+        # Print progress
+        print(f"Epoch [{epoch:2d}/{NUM_EPOCHS}] | "
+              f"Train Loss: {train_loss:.4f} | "
+              f"Val Accuracy: {val_accuracy:.2f}% | "
+              f"Time: {epoch_time:.1f}s")
+
+    total_time = time.time() - start_time
+    print("=" * 60)
+    print("Training finished. Evaluating on hidden Test Set...")
+
+    # Final evaluation on the unseen Test set
+    test_accuracy = evaluate(model, test_loader)
+
+    print(f"Final Test Accuracy: {test_accuracy:.2f}%")
+    print(f"Total time: {total_time:.1f} seconds")
+
+    # Save the trained model
+    model_path = "mnist_cnn.pth"
+    torch.save(model.state_dict(), model_path)
+    print(f"Model saved to '{model_path}'")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()
+
