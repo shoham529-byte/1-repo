@@ -1,0 +1,126 @@
+import cv2
+import numpy as np
+import torch
+from torchvision import transforms
+from model import MNIST_CNN
+
+def load_hsv_bounds(filepath='hsv_value.npy'):
+    """Loads HSV bounds from the numpy file, defaults to neon orange if not found."""
+    try:
+        hsv_value = np.load(filepath)
+        lower_bound = hsv_value[0]
+        upper_bound = hsv_value[1]
+        print("Loaded custom HSV values from file.")
+    except FileNotFoundError:
+        print("hsv_value.npy not found. Defaulting to Neon Orange.")
+        # Default Neon Orange bounds
+        lower_bound = np.array([10, 100, 100])
+        upper_bound = np.array([25, 255, 255])
+    return lower_bound, upper_bound
+
+def predict_digit(canvas, model, device, transform):
+    """Processes the canvas and uses the CNN to predict the drawn digit."""
+   
+    resized = cv2.resize(canvas, (28, 28), interpolation=cv2.INTER_AREA)
+    
+   
+    img_tensor = transform(resized).unsqueeze(0).to(device)
+    
+    with torch.no_grad():
+        output = model(img_tensor)
+        prediction = output.argmax(dim=1, keepdim=True).item()
+        confidence = torch.nn.functional.softmax(output, dim=1)[0][prediction].item()
+        
+    return prediction, confidence
+
+def main():
+    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = MNIST_CNN().to(device)
+    try:
+        model.load_state_dict(torch.load("mnist_cnn.pth", map_location=device))
+    except FileNotFoundError:
+        print("Error: mnist_cnn.pth not found. Please run train.py from Task 16 first.")
+        return
+    model.eval()
+
+   
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.1307,), (0.3081,))
+    ])
+
+   
+    cap = cv2.VideoCapture(0)
+    lower_bound, upper_bound = load_hsv_bounds()
+    
+    
+    canvas = None
+    x1, y1 = 0, 0
+
+    print("--- Controls ---")
+    print("Press 'c' to clear the canvas.")
+    print("Press 'p' to predict the drawn digit.")
+    print("Press 'q' to quit.")
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        
+        frame = cv2.flip(frame, 1)
+        
+        if canvas is None:
+            canvas = np.zeros_like(frame[:, :, 0]) 
+
+       
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        mask = cv2.inRange(hsv, lower_bound, upper_bound)
+        
+       
+        mask = cv2.erode(mask, None, iterations=1)
+        mask = cv2.dilate(mask, None, iterations=2)
+
+       
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if contours and cv2.contourArea(max(contours, key=cv2.contourArea)) > 500:
+            c = max(contours, key=cv2.contourArea)
+            ((x, y), radius) = cv2.minEnclosingCircle(c)
+            M = cv2.moments(c)
+            center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+            
+           
+            if x1 == 0 and y1 == 0:
+                x1, y1 = center
+            else:
+               
+                cv2.line(canvas, (x1, y1), center, 255, 15)
+                x1, y1 = center
+        else:
+           
+            x1, y1 = 0, 0
+
+       
+        frame[canvas == 255] = [0, 255, 0] 
+
+        cv2.imshow("Live Video (Draw here)", frame)
+        cv2.imshow("Canvas (What the AI sees)", canvas)
+
+        key = cv2.waitKey(1) & 0xFF
+        
+        if key == ord('q'):
+            break
+        elif key == ord('c'):
+            canvas = np.zeros_like(frame[:, :, 0]) 
+            print("Canvas cleared.")
+        elif key == ord('p'):
+            prediction, conf = predict_digit(canvas, model, device, transform)
+            print(f"Predicted Digit: {prediction} (Confidence: {conf*100:.2f}%)")
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    main()

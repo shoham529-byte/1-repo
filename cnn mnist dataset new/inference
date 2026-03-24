@@ -1,0 +1,55 @@
+import torch
+import matplotlib.pyplot as plt
+from torchvision import datasets, transforms
+from model import MNIST_CNN
+
+def predict_single_image(model_path="mnist_cnn.pth"):
+    """
+    Loads a trained model and performs inference on a single image from the MNIST test set.
+    
+    Args:
+        model_path (str): File path to the saved model weights.
+    """
+   
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+   
+    model = MNIST_CNN().to(device)
+    try:
+        model.load_state_dict(torch.load(model_path, map_location=device))
+    except FileNotFoundError:
+        print(f"Error: Model file '{model_path}' not found. Please run train.py first.")
+        return
+
+    model.eval()
+
+    
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.1307,), (0.3081,))
+    ])
+    test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
+    
+    
+    image, true_label = test_dataset[2]
+    
+    image_tensor = image.unsqueeze(0).to(device)
+
+  
+    with torch.no_grad():
+        output = model(image_tensor)
+        # Get the index of the max log-probability
+        predicted_label = output.argmax(dim=1, keepdim=True).item()
+
+ 
+    print(f"True Label: {true_label}")
+    print(f"Predicted Label: {predicted_label}")
+    
+   
+    plt.imshow(image.squeeze(), cmap='gray')
+    plt.title(f"Prediction: {predicted_label} | True: {true_label}")
+    plt.axis('off')
+    plt.show()
+
+if __name__ == "__main__":
+    predict_single_image()
